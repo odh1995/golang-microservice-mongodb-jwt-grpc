@@ -10,24 +10,16 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/readpref"
 )
 
-// This is a user defined method to close resources.
-// This method closes mongoDB connection and cancel context.
-func close(client *mongo.Client, ctx context.Context,
-	cancel context.CancelFunc) {
+type Connection interface {
+	Close()
+	DB() *mongo.Database
+}
 
-	// CancelFunc to cancel to context
-	defer cancel()
-
-	// client provides a method to close
-	// a mongoDB connection.
-	defer func() {
-
-		// client.Disconnect method also has deadline.
-		// returns error if any,
-		if err := client.Disconnect(ctx); err != nil {
-			panic(err)
-		}
-	}()
+type conn struct {
+	client   *mongo.Client
+	ctx      *context.Context
+	cancel   context.CancelFunc
+	database *mongo.Database
 }
 
 // This is a user defined method that returns mongo.Client,
@@ -37,8 +29,7 @@ func close(client *mongo.Client, ctx context.Context,
 // context.CancelFunc will be used to cancel context and
 // resource associated with it.
 
-func connect(uri string) (*mongo.Client, context.Context,
-	context.CancelFunc, error) {
+func NewConnection(cfg Config) (Connection, error) {
 
 	// ctx will be used to set deadline for process, here
 	// deadline will of 30 seconds.
@@ -46,39 +37,48 @@ func connect(uri string) (*mongo.Client, context.Context,
 		30*time.Second)
 
 	// mongo.Connect return mongo.Client method
-	client, err := mongo.Connect(ctx, options.Client().ApplyURI(uri))
-	return client, ctx, cancel, err
+	client, err := mongo.Connect(ctx, options.Client().ApplyURI(cfg.Dsn()))
+	if err != nil {
+		panic(err)
+	}
+	return &conn{client: client, ctx: &ctx, cancel: cancel, database: client.Database(cfg.DbName())}, nil
 }
 
 // This is a user defined method that accepts
 // mongo.Client and context.Context
 // This method used to ping the mongoDB, return error if any.
-func ping(client *mongo.Client, ctx context.Context) error {
+func Ping(c *conn) error {
 
 	// mongo.Client has Ping to ping mongoDB, deadline of
 	// the Ping method will be determined by cxt
 	// Ping method return error if any occurred, then
 	// the error can be handled.
-	if err := client.Ping(ctx, readpref.Primary()); err != nil {
+	if err := c.client.Ping(*c.ctx, readpref.Primary()); err != nil {
 		return err
 	}
 	fmt.Println("connected successfully")
 	return nil
 }
 
-func main() {
+// Thisb is a user defined method to close resources.
+// This method closes mongoDB connection and cancel context.
+func (c *conn) Close() {
 
-	// Get Client, Context, CancelFunc and
-	// err from connect method.
-	client, ctx, cancel, err := connect("mongodb://localhost:27017")
+	// CancelFunc to cancel to context
+	defer c.cancel()
 
-	if err != nil {
-		panic(err)
-	}
+	// client provides a method to close
+	// a mongoDB connection.
+	defer func() {
 
-	// Release resource when the main
-	// function is returned.
-	defer close(client, ctx, cancel)
-	// // Ping mongoDB with Ping method
-	ping(client, ctx)
+		// client.Disconnect method also has deadline.
+		// returns error if any,
+		if err := c.client.Disconnect(*c.ctx); err != nil {
+			panic(err)
+		}
+	}()
+}
+
+func (c *conn) DB() *mongo.Database {
+	return c.database
 }
