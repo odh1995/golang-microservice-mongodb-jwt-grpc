@@ -16,3 +16,17 @@ message User {
 message GetUserRequest {
     string id = 1;
 }
+
+message ListUserRequest {}
+
+message DeleteUserResponse {
+    string id = 1;
+}
+
+service AuthService {
+    rpc SignUp(User) returns (User);
+    rpc GetUser(GetUserRequest) returns (User);
+    rpc ListUsers(ListUserRequest) returns (stream User);
+    rpc UpdateUser(User) returns (User);
+    rpc DeleteUser(GetUserRequest) returns (DeleteUserResponse);
+}
